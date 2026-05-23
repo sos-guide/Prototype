@@ -1,0 +1,14 @@
+[Unit]
+Description=SOS-GUIDE First Boot – Mode STARTER
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/firstboot.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

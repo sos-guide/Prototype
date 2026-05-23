@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>⛑️ SOS-GUIDE – Configuration initiale</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='80'%3E⛑️%3C/text%3E%3C/svg%3E">
+    <style>
+        /* Thème clair par défaut (identique à install.html) */
+        :root {
+            --bg: #f8fafc;
+            --bg1: #f1f5f9;
+            --bg2: #e2e8f0;
+            --card: #ffffff;
+            --card-h: #f8fafc;
+            --border: rgba(0,0,0,.08);
+            --border-h: rgba(0,0,0,.15);
+            --text: #0f172a;
+            --sub: #475569;
+            --muted: #94a3b8;
+            --accent: #3b82f6;
+            --green: #22c55e;
+            --red: #ef4444;
+            --radius: 14px;
+            --radius-lg: 18px;
+            --shadow: 0 10px 25px -5px rgba(0,0,0,.05), 0 8px 10px -6px rgba(0,0,0,.02);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.5;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            transition: background .3s, color .3s;
+        }
+        .container {
+            max-width: 650px;
+            width: 100%;
+            margin: 0 auto;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 2rem 1.8rem;
+            box-shadow: var(--shadow);
+        }
+        .header-icon {
+            font-size: 3.2rem;
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            text-align: center;
+            margin-bottom: 0.5rem;
+            color: #0f172a;
+        }
+        .subtitle {
+            color: var(--sub);
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+        }
+        .step-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+            color: var(--sub);
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        .step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.3rem;
+            flex: 1;
+        }
+        .step.active .step-num {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+        .step-num {
+            width: 30px;
+            height: 30px;
+            border-radius: 30px;
+            border: 1.5px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            background: var(--card);
+        }
+        .step.completed .step-num {
+            background: var(--green);
+            border-color: var(--green);
+            color: white;
+        }
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: var(--text);
+        }
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            background: var(--bg);
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-size: 1rem;
+            transition: border .2s;
+        }
+        input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .password-strength {
+            margin-top: 0.4rem;
+            height: 5px;
+            background: var(--bg2);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .strength-bar {
+            height: 100%;
+            width: 0%;
+            transition: width .2s, background .2s;
+        }
+        .hint {
+            font-size: 0.8rem;
+            color: var(--sub);
+            margin-top: 0.3rem;
+        }
+        .toggle-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        .toggle-option {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            cursor: pointer;
+        }
+        .toggle-option input {
+            display: none;
+        }
+        .toggle-visual {
+            width: 48px;
+            height: 24px;
+            background: var(--bg2);
+            border-radius: 24px;
+            border: 1px solid var(--border);
+            position: relative;
+            transition: background .2s;
+            flex-shrink: 0;
+        }
+        .toggle-option.selected .toggle-visual {
+            background: var(--accent);
+        }
+        .toggle-visual::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 20px;
+            top: 1px;
+            left: 1px;
+            transition: left .2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,.1);
+        }
+        .toggle-option.selected .toggle-visual::after {
+            left: 25px;
+        }
+        .toggle-label {
+            font-weight: 500;
+            color: var(--text);
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.8rem 1.8rem;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 1rem;
+            border: none;
+            cursor: pointer;
+            transition: all .15s;
+            background: var(--card);
+            border: 1.5px solid var(--border);
+            color: var(--text);
+            width: 100%;
+        }
+        .btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        .btn-group .btn { flex: 1; }
+        .progress-container {
+            margin: 2rem 0;
+        }
+        .progress-bar {
+            height: 8px;
+            background: var(--bg2);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--accent);
+            transition: width 0.3s;
+        }
+        .progress-text {
+            text-align: center;
+            margin-top: 0.8rem;
+            color: var(--sub);
+        }
+        .summary-list {
+            background: var(--bg);
+            border-radius: var(--radius);
+            padding: 1.2rem;
+            margin: 1.5rem 0;
+        }
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .summary-item:last-child { border: none; }
+        .badge {
+            background: var(--bg2);
+            padding: 0.2rem 0.9rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        .text-center { text-align: center; }
+        .mt-4 { margin-top: 1.5rem; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="card" id="starterCard"></div>
+</div>
+<script>
+    (function(){
+        "use strict";
+
+        // État de la configuration
+        const state = {
+            nodeName: '',
+            wifiPassword: '',
+            enableLoRa: false,
+            enableEthernet: false,
+            step: 0,   // 0: accueil, 1: nom + mot de passe, 2: options, 3: résumé, 4: progression
+            timer: 600, // 10 minutes
+            timerInterval: null
+        };
+
+        const card = document.getElementById('starterCard');
+
+        // Timer (optionnel, pour limiter la session)
+        function startTimer() {
+            if (state.timerInterval) clearInterval(state.timerInterval);
+            state.timerInterval = setInterval(() => {
+                state.timer--;
+                if (state.timer <= 0) {
+                    clearInterval(state.timerInterval);
+                    renderExpired();
+                }
+                const timerEl = document.getElementById('timerDisplay');
+                if (timerEl) {
+                    const mins = Math.floor(state.timer / 60);
+                    const secs = state.timer % 60;
+                    timerEl.textContent = `⏳ Expire dans ${mins}:${secs.toString().padStart(2,'0')}`;
+                }
+            }, 1000);
+        }
+        function stopTimer() { if(state.timerInterval) clearInterval(state.timerInterval); }
+
+        function renderExpired() {
+            card.innerHTML = `<div class="text-center"><div class="header-icon">⏰</div><h1>Session expirée</h1><p class="subtitle">Redémarrez le Raspberry Pi pour relancer l'assistant.</p></div>`;
+            stopTimer();
+        }
+
+        function render() {
+            switch (state.step) {
+                case 0: renderWelcome(); break;
+                case 1: renderIdentity(); break;
+                case 2: renderOptions(); break;
+                case 3: renderSummary(); break;
+                case 4: renderProgress(); break;
+                default: renderWelcome();
+            }
+        }
+
+        function renderWelcome() {
+            startTimer();
+            const mins = Math.floor(state.timer / 60), secs = state.timer % 60;
+            card.innerHTML = `
+                <div class="text-center"><div class="timer-badge" id="timerDisplay">⏳ Expire dans ${mins}:${secs.toString().padStart(2,'0')}</div></div>
+                <div class="header-icon">⛑️</div>
+                <h1>Bienvenue sur SOS‑GUIDE</h1>
+                <p class="subtitle">Configuration initiale du point d'accès d'urgence.<br>Aucune connexion Internet requise.</p>
+                <div style="background: var(--bg); border-radius: var(--radius); padding: 1rem; margin: 1.5rem 0;">
+                    <div style="display: flex; gap: 1rem; align-items: center;">
+                        <span style="font-size: 2rem;">📶</span>
+                        <div><strong>Réseau actuel :</strong> ⛑️ SOS-GUIDE - STARTER<br><span style="font-size:0.9rem; color:var(--sub);">Connectez-vous à ce réseau</span></div>
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="startBtn">🚀 Démarrer la configuration</button>
+            `;
+            document.getElementById('startBtn').addEventListener('click', ()=>{ state.step=1; render(); });
+        }
+
+        function renderIdentity() {
+            card.innerHTML = `
+                <div class="step-indicator">
+                    <div class="step active"><span class="step-num">1</span><span class="step-label">Identité</span></div>
+                    <div class="step"><span class="step-num">2</span><span class="step-label">Options</span></div>
+                    <div class="step"><span class="step-num">3</span><span class="step-label">Résumé</span></div>
+                </div>
+                <h2>Informations du lieu</h2>
+                <div class="input-group">
+                    <label>🏢 Nom du lieu / nœud</label>
+                    <input type="text" id="nodeNameInput" placeholder="Ex: Mairie de Paris" value="${state.nodeName}">
+                </div>
+                <div class="input-group">
+                    <label>🔐 Mot de passe WiFi (optionnel)</label>
+                    <input type="password" id="wifiPasswordInput" placeholder="Laisser vide pour réseau ouvert">
+                    <div class="password-strength"><div class="strength-bar" id="strengthBar"></div></div>
+                    <div class="hint" id="strengthHint">Minimum 8 caractères recommandé</div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn" id="backBtn">← Retour</button>
+                    <button class="btn btn-primary" id="nextBtn">Continuer</button>
+                </div>
+            `;
+            const pwdInput = document.getElementById('wifiPasswordInput');
+            const strengthBar = document.getElementById('strengthBar');
+            const strengthHint = document.getElementById('strengthHint');
+            const nextBtn = document.getElementById('nextBtn');
+
+            pwdInput.addEventListener('input', (e) => {
+                const pwd = e.target.value;
+                let strength = 0;
+                if(pwd.length>=8) strength++;
+                if(pwd.match(/[a-z]/)&&pwd.match(/[A-Z]/)) strength++;
+                if(pwd.match(/[0-9]/)) strength++;
+                if(pwd.match(/[^a-zA-Z0-9]/)) strength++;
+                const percent = (strength/4)*100;
+                strengthBar.style.width = percent+'%';
+                strengthBar.style.background = strength<=1 ? 'var(--red)' : (strength===2 ? '#eab308' : 'var(--green)');
+                strengthHint.textContent = strength<=1 ? 'Faible' : (strength===2 ? 'Moyen' : 'Fort');
+            });
+
+            document.getElementById('backBtn').addEventListener('click', ()=>{ state.step=0; render(); });
+            nextBtn.addEventListener('click', ()=>{
+                const nodeName = document.getElementById('nodeNameInput').value.trim();
+                if (!nodeName) { alert('Le nom du lieu est obligatoire.'); return; }
+                state.nodeName = nodeName;
+                state.wifiPassword = document.getElementById('wifiPasswordInput').value;
+                state.step=2; render();
+            });
+        }
+
+        function renderOptions() {
+            const loRaChecked = state.enableLoRa ? 'selected' : '';
+            const ethChecked = state.enableEthernet ? 'selected' : '';
+            card.innerHTML = `
+                <div class="step-indicator">
+                    <div class="step completed"><span class="step-num">✓</span><span class="step-label">Identité</span></div>
+                    <div class="step active"><span class="step-num">2</span><span class="step-label">Options</span></div>
+                    <div class="step"><span class="step-num">3</span><span class="step-label">Résumé</span></div>
+                </div>
+                <h2>Options supplémentaires</h2>
+                <div class="toggle-container">
+                    <div class="toggle-option ${loRaChecked}" id="toggleLoRa">
+                        <div class="toggle-visual"></div>
+                        <span class="toggle-label">📡 Activer la communication LoRa (mesh)</span>
+                    </div>
+                    <div class="toggle-option ${ethChecked}" id="toggleEthernet">
+                        <div class="toggle-visual"></div>
+                        <span class="toggle-label">🌐 Activer la connexion Ethernet / Internet (pour mises à jour)</span>
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn" id="backBtn">← Retour</button>
+                    <button class="btn btn-primary" id="nextBtn">Continuer</button>
+                </div>
+            `;
+            document.getElementById('toggleLoRa').addEventListener('click', ()=>{
+                state.enableLoRa = !state.enableLoRa;
+                renderOptions();
+            });
+            document.getElementById('toggleEthernet').addEventListener('click', ()=>{
+                state.enableEthernet = !state.enableEthernet;
+                renderOptions();
+            });
+            document.getElementById('backBtn').addEventListener('click', ()=>{ state.step=1; render(); });
+            document.getElementById('nextBtn').addEventListener('click', ()=>{ state.step=3; render(); });
+        }
+
+        function renderSummary() {
+            const wifiSecurity = state.wifiPassword ? 'WPA2 (protégé)' : 'Ouvert (non sécurisé)';
+            card.innerHTML = `
+                <div class="step-indicator">
+                    <div class="step completed"><span class="step-num">✓</span><span class="step-label">Identité</span></div>
+                    <div class="step completed"><span class="step-num">✓</span><span class="step-label">Options</span></div>
+                    <div class="step active"><span class="step-num">3</span><span class="step-label">Résumé</span></div>
+                </div>
+                <h2>Récapitulatif</h2>
+                <div class="summary-list">
+                    <div class="summary-item"><span>Nom du nœud</span><span class="badge">${state.nodeName}</span></div>
+                    <div class="summary-item"><span>Sécurité WiFi</span><span class="badge">${wifiSecurity}</span></div>
+                    <div class="summary-item"><span>Communication LoRa</span><span class="badge">${state.enableLoRa?'✅':'❌'}</span></div>
+                    <div class="summary-item"><span>Connexion Internet (ETH)</span><span class="badge">${state.enableEthernet?'✅':'❌'}</span></div>
+                </div>
+                <p style="font-size:0.9rem; margin:1rem 0;"><strong>⏱️ L'installation prendra environ 1 minute.</strong> Redémarrage automatique.</p>
+                <div class="btn-group">
+                    <button class="btn" id="backBtn">← Modifier</button>
+                    <button class="btn btn-primary" id="confirmBtn">✅ Installer</button>
+                </div>
+            `;
+            document.getElementById('backBtn').addEventListener('click', ()=>{ state.step=2; render(); });
+            document.getElementById('confirmBtn').addEventListener('click', ()=>{
+                state.step=4; render();
+                // Envoyer la configuration au serveur
+                const formData = new FormData();
+                formData.append('nodeName', state.nodeName);
+                formData.append('wifiPassword', state.wifiPassword);
+                formData.append('enableLoRa', state.enableLoRa ? 'true' : 'false');
+                formData.append('enableEthernet', state.enableEthernet ? 'true' : 'false');
+
+                fetch('/api/install', {
+                    method: 'POST',
+                    body: formData
+                }).then(response => response.json()).then(data => {
+                    if (data.success) {
+                        // Simulation de progression
+                        simulateInstallation();
+                    } else {
+                        alert('Erreur : ' + (data.message || 'Inconnue'));
+                        state.step=3; render();
+                    }
+                }).catch(err => {
+                    alert('Erreur réseau : impossible de joindre le serveur.');
+                    state.step=3; render();
+                });
+            });
+        }
+
+        function simulateInstallation() {
+            const progressFill = document.getElementById('progressFill');
+            const progressStepText = document.getElementById('progressStepText');
+            let percent = 0;
+            const steps = ["Enregistrement...","Application de la configuration...","Finalisation..."];
+            let idx = 0;
+            const interval = setInterval(() => {
+                percent += 5;
+                if(percent>=100) { 
+                    percent=100; 
+                    progressFill.style.width='100%'; 
+                    progressStepText.textContent='Terminé ! Redémarrage...'; 
+                    clearInterval(interval); 
+                    // Le serveur va redémarrer, on affiche un message
+                    setTimeout(()=>{
+                        card.innerHTML = `<div class="text-center"><div class="header-icon">✅</div><h1>Configuration réussie !</h1><p class="subtitle">Le point d'accès redémarre avec vos paramètres.<br>Reconnectez-vous au réseau <strong>⛑️ SOS-GUIDE - ${state.nodeName}</strong> dans quelques instants.</p></div>`;
+                        stopTimer();
+                    }, 2000);
+                } else {
+                    progressFill.style.width=percent+'%';
+                    if(percent%20===0 && idx<steps.length-1) { idx++; progressStepText.textContent=steps[idx]; }
+                }
+            }, 100);
+        }
+
+        function renderProgress() {
+            card.innerHTML = `
+                <div class="text-center"><div class="header-icon">⏳</div><h2>Installation en cours</h2><p class="subtitle">Ne pas éteindre</p></div>
+                <div class="progress-container">
+                    <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+                    <div class="progress-text" id="progressStepText">Enregistrement de la configuration...</div>
+                </div>
+            `;
+        }
+
+        // Initialisation
+        render();
+    })();
+</script>
+</body>
+</html>

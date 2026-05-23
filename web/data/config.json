@@ -1,0 +1,24 @@
+{
+  "establishment": {
+    "name": "Lieu Non Défini",
+    "address": "Adresse non renseignée",
+    "lat": "",
+    "lon": "",
+    "type": "erp",
+    "localCrisisNumber": "",
+    "localRisk": "",
+    "localSamuNumber": "",
+    "localPompiersNumber": "",
+    "localMairieNumber": "",
+    "localPrefecture": "",
+    "localDsden": "",
+    "localRadioFreq": "",
+    "localCroixRouge": "",
+    "localPccAddress": "",
+    "localMeetingPoint": "",
+    "localEvacuationPlan": ""
+  },
+  "reassurance": {
+    "message": "Restez calme, les secours sont informés et arrivent."
+  }
+}
