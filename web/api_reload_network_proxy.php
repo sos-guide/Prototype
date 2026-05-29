@@ -6,8 +6,10 @@
  * Il relaie la requête vers /api/reload-network (restreint à 127.0.0.1 par nginx)
  *
  * CORRECTIONS v2.3 :
- *   ✅ Ce fichier manquait entièrement dans la v2.2 (le JS appelait un 404)
- *   ✅ Vérification CSRF session avant tout traitement
+ *   ✅ Bypass CSRF via Referer supprimé
+ *      (les headers Referer sont falsifiables par n'importe quel client du réseau local)
+ *      Le token CSRF de session est maintenant OBLIGATOIRE sans exception
+ *   ✅ admin.php envoie désormais le token CSRF dans le fetch() (voir admin.php)
  *   ✅ Appel curl interne vers 127.0.0.1 (contourne la restriction nginx)
  *   ✅ Journal d'audit structuré
  */
@@ -17,14 +19,12 @@ session_start();
 
 define('AUDIT_LOG', '/var/log/sos-guide-admin-audit.log');
 
-// ── 1. Authentification HTTP Basic (nginx gère /admin, mais ce fichier est hors /admin)
-// On vérifie qu'on est bien dans une session admin valide via referer + IP
-$referer = $_SERVER['HTTP_REFERER'] ?? '';
-$remote  = $_SERVER['REMOTE_ADDR'] ?? '';
+// ── 1. Vérification IP source ─────────────────────────────────────────────────
+// Seuls les clients du réseau AP (10.0.0.x) ou localhost peuvent accéder
+$remote = $_SERVER['REMOTE_ADDR'] ?? '';
 
-// Seuls les clients du réseau AP ou localhost peuvent accéder
 $allowed = in_array($remote, ['127.0.0.1', '::1'], true)
-        || preg_match('/^10\.0\.0\.\d{1,3}$/', $remote);
+        || (bool) preg_match('/^10\.0\.0\.\d{1,3}$/', $remote);
 
 if (!$allowed) {
     http_response_code(403);
@@ -32,32 +32,52 @@ if (!$allowed) {
     exit;
 }
 
+// ── 2. Méthode HTTP ───────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => 'POST requis']);
     exit;
 }
 
-// ── 2. CSRF via session (cohérent avec admin.php)
+// ── 3. Vérification CSRF — token de session OBLIGATOIRE ──────────────────────
+// FIX v2.3 : Le bypass via Referer est supprimé.
+//
+// Ancien code (VULNÉRABLE) :
+//   if (token_invalide) {
+//       $localReferer = str_starts_with($referer, 'http://10.0.0.1/');
+//       if (!$localReferer) { return 403; }
+//       // ← Si referer = 10.0.0.1, accès accordé SANS token
+//       //   N'importe quel script sur le réseau local peut falsifier le Referer
+//   }
+//
+// Nouveau code (CORRECT) :
+//   Le token CSRF de session doit toujours être présent et valide.
+//   admin.php envoie maintenant le token dans chaque fetch() (voir admin.php fix).
+
 if (
     empty($_POST['csrf_token']) ||
     empty($_SESSION['csrf_token']) ||
-    !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])
+    !hash_equals((string) $_SESSION['csrf_token'], (string) $_POST['csrf_token'])
 ) {
-    // Note : admin.php passe le token via JS — si session absente, on vérifie le referer
-    // Pour le reload réseau (action non destructive), on accepte sans CSRF si referer local
-    $localReferer = str_starts_with($referer, 'http://10.0.0.1/')
-                 || str_starts_with($referer, 'http://localhost/');
-    if (!$localReferer) {
-        http_response_code(403);
-        echo json_encode(['success' => false, 'message' => 'Requête non autorisée']);
-        exit;
-    }
+    // Audit de la tentative rejetée
+    $entry = [
+        'ts'     => date('c'),
+        'ip'     => $remote,
+        'action' => 'CSRF_REJECT',
+        'detail' => empty($_SESSION['csrf_token']) ? 'session absente' : 'token invalide',
+    ];
+    @file_put_contents(AUDIT_LOG,
+        json_encode($entry, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
+
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Requête non autorisée (CSRF)']);
+    exit;
 }
 
+// ── 4. Paramètres ─────────────────────────────────────────────────────────────
 $reloadWifi = (($_POST['reload_wifi'] ?? 'false') === 'true');
 
-// ── 3. Appel interne curl vers /api/reload-network (127.0.0.1)
+// ── 5. Appel interne curl vers /api/reload-network (127.0.0.1) ───────────────
 // nginx restreint cet endpoint à 127.0.0.1 — ce proxy tourne côté serveur
 $ch = curl_init('http://127.0.0.1/api/reload-network');
 curl_setopt_array($ch, [
@@ -68,7 +88,6 @@ curl_setopt_array($ch, [
     CURLOPT_CONNECTTIMEOUT => 5,
     CURLOPT_HTTPHEADER     => [
         'Content-Type: application/x-www-form-urlencoded',
-        'X-Forwarded-For: 127.0.0.1',
     ],
 ]);
 
@@ -77,20 +96,17 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlErr  = curl_error($ch);
 curl_close($ch);
 
-// ── 4. Fallback si curl non disponible : exécuter directement les reloads
-if ($response === false || $curlErr) {
+// ── 6. Fallback si curl non disponible : exécuter directement les reloads ─────
+if ($response === false || $curlErr !== '') {
     $log    = [];
     $errors = [];
 
-    // Hash SHA256
     exec('sudo /usr/local/bin/sos-guide-regen-hash.sh 2>&1', $o, $r);
     $r === 0 ? $log[] = 'Hash SHA256 régénéré' : $errors[] = 'Hash: ' . implode(' ', $o);
 
-    // nginx
     exec('sudo /bin/systemctl reload nginx 2>&1', $o, $r);
     $r === 0 ? $log[] = 'nginx rechargé' : $errors[] = 'nginx: ' . implode(' ', $o);
 
-    // dnsmasq
     exec('sudo /bin/systemctl reload dnsmasq 2>&1', $o, $r);
     $r === 0 ? $log[] = 'dnsmasq rechargé' : $errors[] = 'dnsmasq: ' . implode(' ', $o);
 
@@ -99,7 +115,7 @@ if ($response === false || $curlErr) {
         $r === 0 ? $log[] = 'hostapd redémarré' : $errors[] = 'hostapd: ' . implode(' ', $o);
     }
 
-    $success = empty($errors);
+    $success  = empty($errors);
     $response = json_encode([
         'success' => $success,
         'log'     => $log,
@@ -109,7 +125,7 @@ if ($response === false || $curlErr) {
     $httpCode = $success ? 200 : 207;
 }
 
-// ── 5. Audit
+// ── 7. Audit ──────────────────────────────────────────────────────────────────
 $decoded = json_decode($response ?? '{}', true) ?? [];
 $entry = [
     'ts'          => date('c'),
@@ -121,7 +137,8 @@ $entry = [
     'log'         => $decoded['log']    ?? [],
     'errors'      => $decoded['errors'] ?? [],
 ];
-@file_put_contents(AUDIT_LOG, json_encode($entry, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
+@file_put_contents(AUDIT_LOG,
+    json_encode($entry, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
 
 http_response_code($httpCode ?: 200);
 echo $response ?: json_encode(['success' => false, 'message' => 'Réponse vide']);
