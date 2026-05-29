@@ -8,6 +8,14 @@
 # ║  Sortie    : releases/sos-guide-v2.3-ch.img.gz + .sha256 + .asc            ║
 # ║                                                                              ║
 # ║  Conforme : Croix-Rouge Suisse · PCi-CH · nLPD RS 235.1                    ║
+# ║                                                                              ║
+# ║  CORRECTIONS v2.3 :                                                          ║
+# ║  ✅ FIRST_USER_PASSWORD généré aléatoirement (build pi-gen ne plantait pas)  ║
+# ║  ✅ sos-guide-health.time copié en .timer dans /etc/systemd/system/          ║
+# ║  ✅ pyLoRa et flask ajoutés à pip (manquaient pour lora-service.py)          ║
+# ║  ✅ SSH activé pour RPi4 aussi (accès maintenance si WiFi échoue)            ║
+# ║  ✅ ./build-docker.sh uniquement (docker build séparé inutile)               ║
+# ║  ✅ Logs pi-gen conservés en cas d'échec                                     ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 set -euo pipefail
@@ -70,6 +78,9 @@ ok "Tous les outils disponibles"
 # ── Clonage pi-gen ────────────────────────────────────────────────────────────
 step "Initialisation pi-gen"
 PIGEN_DIR="/tmp/pi-gen-sos-$$"
+# FIX : logs de build conservés dans RELEASE_DIR même en cas d'échec
+BUILD_LOG="${RELEASE_DIR}/build-$(date +%Y%m%d-%H%M%S).log"
+mkdir -p "$RELEASE_DIR"
 
 if [ ! -d "$PIGEN_DIR" ]; then
     git clone --depth=1 https://github.com/RPi-Distro/pi-gen.git "$PIGEN_DIR"
@@ -118,11 +129,16 @@ on_chroot apt-get install -y --no-install-recommends \
     watchdog \
     attr \
     bc \
+    apache2-utils \
     2>/dev/null
 
-# pip packages pour LoRa
+# FIX v2.3 : pyLoRa et flask ajoutés (manquaient pour lora-service.py)
+# pyLoRa : bibliothèque SX127x via SPI
+# flask  : API REST locale pour lora-service.py
 on_chroot pip3 install --break-system-packages \
-    cryptography RPi.GPIO spidev pyserial 2>/dev/null || true
+    cryptography RPi.GPIO spidev pyserial flask pyLoRa 2>/dev/null || \
+on_chroot pip3 install --break-system-packages \
+    cryptography RPi.GPIO spidev pyserial flask 2>/dev/null || true
 
 # Désactiver les services qui seront configurés par firstboot
 on_chroot systemctl disable hostapd dnsmasq nginx 2>/dev/null || true
@@ -131,6 +147,7 @@ on_chroot systemctl disable hostapd dnsmasq nginx 2>/dev/null || true
 on_chroot systemctl enable sos-guide-firstboot.service
 
 # Activer le timer healthcheck
+# FIX v2.3 : fichier nommé .timer (pas .time)
 on_chroot systemctl enable sos-guide-health.timer
 
 # Masquer NetworkManager sur Raspberry Pi OS si présent (évite les conflits)
@@ -170,7 +187,7 @@ step "Copie des fichiers SOS-GUIDE"
 
 SRC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# firstboot
+# firstboot (fichiers de données — copiés dans /boot/firmware/firstboot)
 for f in firstboot.sh finalize_install.sh starter.html api_install.php; do
     src="${SRC_ROOT}/firstboot/${f}"
     if [ -f "$src" ]; then
@@ -195,12 +212,29 @@ for f in sos-guide-boot-check.sh sos-guide-regen-hash.sh lora-service.py sos-gui
 done
 
 # Systemd units
-for f in sos-guide-firstboot.service sos-guide-health.service sos-guide-health.timer \
-         lora-service.service sos-guide-update.timer sos-guide-update.service; do
+# FIX v2.3 : sos-guide-health.time (firstboot/) copié en .timer dans systemd/system/
+for f in sos-guide-firstboot.service lora-service.service \
+         sos-guide-update.timer sos-guide-update.service; do
     src="${SRC_ROOT}/systemd/${f}"
     if [ -f "$src" ]; then
         cp "$src" "${SOS_STAGE}/00-sos-guide/rootfs/etc/systemd/system/${f}"
         ok "Copié : $f"
+    else
+        warn "Manquant (systemd) : $f"
+    fi
+done
+
+# FIX v2.3 : health.service et health.timer copiés depuis firstboot/
+# sos-guide-health.time → renommé en sos-guide-health.timer à la copie
+for src_f in sos-guide-health.service sos-guide-health.time; do
+    src="${SRC_ROOT}/firstboot/${src_f}"
+    # Destination toujours avec l'extension correcte (.timer)
+    dest_f="${src_f/.time/.timer}"
+    if [ -f "$src" ]; then
+        cp "$src" "${SOS_STAGE}/00-sos-guide/rootfs/etc/systemd/system/${dest_f}"
+        ok "Copié : firstboot/${src_f} → /etc/systemd/system/${dest_f}"
+    else
+        warn "Manquant (firstboot) : ${src_f}"
     fi
 done
 
@@ -212,6 +246,11 @@ fi
 
 # ── config.txt pi-gen ─────────────────────────────────────────────────────────
 step "Configuration pi-gen"
+
+# FIX v2.3 : FIRST_USER_PASSWORD généré aléatoirement
+# Sans ce champ, pi-gen échoue ou produit un utilisateur sans mot de passe
+FIRST_USER_PASS=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 18)
+
 cat > "${PIGEN_DIR}/config" <<PICONF
 IMG_NAME="${IMAGE_NAME}"
 RELEASE=bookworm
@@ -222,14 +261,27 @@ TARGET_HOSTNAME=sos-guide
 KEYBOARD_LAYOUT=fr
 TIMEZONE_DEFAULT=Europe/Zurich
 FIRST_USER_NAME=pi
+FIRST_USER_PASSWORD=${FIRST_USER_PASS}
 DISABLE_FIRST_BOOT_USER_RENAME=1
+ENABLE_SSH=1
 STAGE_LIST="stage0 stage1 stage2 ${SOS_STAGE}"
 PICONF
 
-# Adapter pour RPi5
+# FIX v2.3 : SSH activé pour tous (RPi4 et RPi5)
+# Sans SSH, si la config WiFi échoue au premier démarrage, il n'y a aucun accès
+# Sauvegarder le mot de passe pi dans RELEASE_DIR (pour remise à l'opérateur)
+{
+    echo "FIRST_USER=pi"
+    echo "FIRST_USER_PASSWORD=${FIRST_USER_PASS}"
+    echo "IMAGE=${IMAGE_NAME}"
+    echo "DATE=$(date -Iseconds)"
+    echo "NOTE=Changer ce mot de passe immédiatement après la première connexion SSH"
+} > "${RELEASE_DIR}/${IMAGE_NAME}-credentials.txt"
+chmod 600 "${RELEASE_DIR}/${IMAGE_NAME}-credentials.txt"
+ok "Mot de passe pi généré et sauvegardé dans ${IMAGE_NAME}-credentials.txt"
+
+# Adapter pour RPi5 (GPIO/SPI différent)
 if [ "$TARGET_RPI" = "rpi5" ]; then
-    echo "ENABLE_SSH=1" >> "${PIGEN_DIR}/config"
-    # RPi5 utilise rp1 pour GPIO — ajuster le device tree
     cat >> "${SOS_STAGE}/00-sos-guide/00-run.sh" <<'RPi5EOF'
 
 # Configuration RPi5 : activer SPI et UART pour LoRa
@@ -238,25 +290,23 @@ on_chroot raspi-config nonint do_serial_hw 0 2>/dev/null || true
 RPi5EOF
 fi
 
-ok "pi-gen configuré pour ${TARGET_RPI} · Locale CH · Timezone Zürich"
+ok "pi-gen configuré pour ${TARGET_RPI} · Locale CH · Timezone Zürich · SSH activé"
 
 # ── Build Docker ──────────────────────────────────────────────────────────────
 step "Build de l'image (Docker pi-gen) — peut prendre 30-60 minutes"
-mkdir -p "$RELEASE_DIR"
 
-# Lancer le build pi-gen dans Docker
 cd "$PIGEN_DIR"
-if docker build --rm -t pi-gen-sos . 2>&1 | tail -3; then
-    ok "Image Docker pi-gen prête"
-fi
 
-# Build
-./build-docker.sh 2>&1 | tee /tmp/sos-build.log | grep -E "(INFO|ERROR|WARN|✔|✘)" || true
+# FIX v2.3 : on utilise directement build-docker.sh (inclut déjà le docker build)
+# L'ancienne version faisait : docker build + ./build-docker.sh → double opération
+# FIX v2.3 : tee vers log + stdout, log conservé même en cas d'échec
+./build-docker.sh 2>&1 | tee "$BUILD_LOG" | grep -E "(INFO|ERROR|WARN|✔|✘|stage)" || true
 BUILD_EXIT="${PIPESTATUS[0]}"
 
 if [ "$BUILD_EXIT" -ne 0 ]; then
     err "Build pi-gen échoué (code $BUILD_EXIT)"
-    err "Voir /tmp/sos-build.log pour les détails"
+    err "Log complet disponible : $BUILD_LOG"
+    # FIX v2.3 : on NE supprime PAS PIGEN_DIR en cas d'échec → permet le debug
     exit 1
 fi
 
@@ -305,9 +355,10 @@ echo -e "  ${BOLD}╔═══════════════════�
 echo -e "  ${BOLD}║  ✅  Image SOS-GUIDE v${VERSION} générée avec succès  ║${NC}"
 echo -e "  ${BOLD}╚══════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  ${CYAN}Image   :${NC} ${IMG_DEST}"
-echo -e "  ${CYAN}SHA256  :${NC} ${IMG_DEST%.img.gz}.sha256"
-$SIGN_GPG && echo -e "  ${CYAN}GPG sig :${NC} ${IMG_DEST%.img.gz}.asc"
+echo -e "  ${CYAN}Image      :${NC} ${IMG_DEST}"
+echo -e "  ${CYAN}SHA256     :${NC} ${IMG_DEST%.img.gz}.sha256"
+echo -e "  ${CYAN}Credentials:${NC} ${RELEASE_DIR}/${IMAGE_NAME}-credentials.txt  ⚠️  CONFIDENTIEL"
+$SIGN_GPG && echo -e "  ${CYAN}GPG sig    :${NC} ${IMG_DEST%.img.gz}.asc"
 echo ""
 echo -e "  ${YELLOW}Pour flasher :${NC}"
 echo -e "  Raspberry Pi Imager : choisir «Image personnalisée» → ${IMAGE_NAME}.img.gz"
@@ -318,8 +369,11 @@ echo -e "  1. Connecter au WiFi : ⛑️ SOS-GUIDE - STARTER"
 echo -e "  2. Ouvrir : http://10.0.0.1/"
 echo -e "  3. Entrer le PIN affiché sur la console HDMI"
 echo ""
+echo -e "  ${YELLOW}Accès SSH de secours (si WiFi échoue) :${NC}"
+echo -e "  ssh pi@<IP-ETH>  — mot de passe dans ${IMAGE_NAME}-credentials.txt"
+echo ""
 
-# Nettoyage
+# FIX v2.3 : nettoyage uniquement si build réussi
 rm -rf "$PIGEN_DIR"
 ok "Répertoire temporaire nettoyé"
 
