@@ -1,12 +1,17 @@
 <?php
 /**
- * SOS-GUIDE Admin Panel v2.2
- * ✅ Bouton reload réseau à chaud (sans reboot)
+ * SOS-GUIDE Admin Panel v2.3
+ *   ✅ Bouton reload réseau à chaud (sans reboot)
  *   ✅ Indicateurs statut temps réel (hostapd, dnsmasq, nginx, LoRa)
- *   ✅ Modification canal WiFi (W8)
+ *   ✅ Modification canal WiFi
  *   ✅ Journal d'audit visible
  *   ✅ Gestion LoRa (activer/désactiver)
- *   ✅ Mention nLPD (B7)
+ *   ✅ Mention nLPD
+ *
+ * CORRECTIONS v2.3 :
+ *   ✅ eth0 hardcodé supprimé → détection dynamique de l'interface Ethernet
+ *      (eth0 n'existe pas toujours — ex : enp3s0, end0, eth1…)
+ *   ✅ Token CSRF envoyé dans le fetch() JavaScript (manquait — proxy le rejetait)
  */
 
 session_start();
@@ -24,23 +29,23 @@ $config = [];
 if (file_exists(CONFIG_FILE)) {
     $config = json_decode(file_get_contents(CONFIG_FILE), true) ?? [];
 }
-$establishment = $config['establishment'] ?? [];
-$reassurance   = $config['reassurance']   ?? ['message' => ''];
-$wifiChannel   = intval($config['wifiChannel'] ?? 11);
-$enableLoRa    = $config['enableLoRa']    ?? false;
-$enableEthernet= $config['enableEthernet'] ?? false;
+$establishment  = $config['establishment'] ?? [];
+$reassurance    = $config['reassurance']   ?? ['message' => ''];
+$wifiChannel    = intval($config['wifiChannel'] ?? 11);
+$enableLoRa     = $config['enableLoRa']     ?? false;
+$enableEthernet = $config['enableEthernet'] ?? false;
 
-// ── Statut des services (lecture rapide) ──────────────────────────────────────
+// ── Statut des services ───────────────────────────────────────────────────────
 function svc_active(string $name): bool {
-    exec("systemctl is-active --quiet " . escapeshellarg($name), $o, $r);
+    exec('systemctl is-active --quiet ' . escapeshellarg($name), $o, $r);
     return $r === 0;
 }
 
 $services = [
-    'hostapd'  => svc_active('hostapd'),
-    'dnsmasq'  => svc_active('dnsmasq'),
-    'nginx'    => svc_active('nginx'),
-    'lora'     => svc_active('lora-service'),
+    'hostapd' => svc_active('hostapd'),
+    'dnsmasq' => svc_active('dnsmasq'),
+    'nginx'   => svc_active('nginx'),
+    'lora'    => svc_active('lora-service'),
 ];
 
 // ── Hash intégrité ────────────────────────────────────────────────────────────
@@ -51,36 +56,54 @@ $hashAge = file_exists(HASH_FILE)
 // ── Dernières entrées d'audit ─────────────────────────────────────────────────
 $auditLines = [];
 if (file_exists(AUDIT_LOG)) {
-    $lines = file(AUDIT_LOG);
+    $lines      = file(AUDIT_LOG);
     $auditLines = array_slice(array_reverse($lines), 0, 5);
 }
 
-// ── IP ETH (pour SSH) ────────────────────────────────────────────────────────
-$ethIp = shell_exec("ip -4 addr show eth0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1") ?? '';
-$ethIp = trim($ethIp);
+// ── FIX v2.3 : Détection dynamique de l'interface Ethernet ───────────────────
+// Ancien code (BUGUÉ) :
+//   $ethIp = shell_exec("ip -4 addr show eth0 2>/dev/null | ...") ?? '';
+//   → eth0 n'existe pas toujours (ex: enp3s0, end0, eth1, usb0…)
+//   → retourne toujours une chaîne vide sur RPi5 (interface = end0)
+//
+// Nouveau code : détection de la première interface en/eth disponible
+$ethIface = trim((string)(shell_exec(
+    "ip -o link show 2>/dev/null | awk -F': ' '/^[0-9]+: (en|eth)/{gsub(/@.*/, \"\", \$2); print \$2; exit}'"
+) ?? ''));
 
-// Message flash
-$flash = '';
-$flashType = '';
+$ethIp = '';
+if ($ethIface !== '') {
+    $ethIp = trim((string)(shell_exec(
+        "ip -4 addr show " . escapeshellarg($ethIface)
+        . " 2>/dev/null | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}' | head -1"
+    ) ?? ''));
+}
+
+// ── Message flash ─────────────────────────────────────────────────────────────
+$flash = ''; $flashType = '';
 if (isset($_GET['updated'])) {
-    $flash = '✅ Configuration mise à jour et services rechargés avec succès.';
+    $flash     = '✅ Configuration mise à jour et services rechargés avec succès.';
     $flashType = 'success';
     if (isset($_GET['warn'])) {
-        $warns = htmlspecialchars($_GET['warn']);
-        $flash .= " ⚠️ Avertissements : $warns";
+        $flash    .= ' ⚠️ Avertissements : ' . htmlspecialchars($_GET['warn']);
         $flashType = 'warning';
     }
 } elseif (isset($_GET['error'])) {
-    $flash = '❌ Erreur lors de la mise à jour. Vérifiez les logs.';
+    $flash     = '❌ Erreur lors de la mise à jour. Vérifiez les logs.';
     $flashType = 'error';
 }
 
 $mapExists = file_exists('/var/www/sos-guide/img/map_location.png');
 $types = [
-    'erp' => 'ERP (Public)','ecole' => 'École','mairie' => 'Mairie',
-    'ehpad' => 'EHPAD','entreprise' => 'Entreprise','bar' => 'Bar/Restaurant',
-    'boitedenuit' => 'Discothèque','hopital' => 'Hôpital/Clinique',
-    'gymnase' => 'Gymnase/PA',
+    'erp'          => 'ERP (Public)',
+    'ecole'        => 'École',
+    'mairie'       => 'Mairie',
+    'ehpad'        => 'EHPAD',
+    'entreprise'   => 'Entreprise',
+    'bar'          => 'Bar/Restaurant',
+    'boitedenuit'  => 'Discothèque',
+    'hopital'      => 'Hôpital/Clinique',
+    'gymnase'      => 'Gymnase/PA',
 ];
 ?>
 <!DOCTYPE html>
@@ -88,7 +111,7 @@ $types = [
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>⛑️ SOS-GUIDE — Administration v2.2</title>
+<title>⛑️ SOS-GUIDE — Administration v2.3</title>
 <style>
 :root{
   --bg:#0f172a;--card:#1e293b;--border:#334155;
@@ -200,13 +223,13 @@ textarea{min-height:70px;resize:vertical}
 
 <div class="top-bar">
   <h1>⛑️ SOS-GUIDE Administration
-    <span class="badge badge-ok">v2.2</span>
+    <span class="badge badge-ok">v2.3</span>
   </h1>
   <nav>
     <a href="/">← Portail</a>
     <a href="/admin">⚙️ Config</a>
     <?php if (!empty($ethIp)): ?>
-    <a href="#ssh" title="SSH : pi@<?= htmlspecialchars($ethIp) ?>">🔐 SSH</a>
+    <a href="#ssh" title="SSH : pi@<?= htmlspecialchars($ethIp) ?> (<?= htmlspecialchars($ethIface) ?>)">🔐 SSH</a>
     <?php endif; ?>
     <a href="PRIVACY.md" target="_blank">🔒 nLPD</a>
   </nav>
@@ -282,7 +305,8 @@ textarea{min-height:70px;resize:vertical}
     </div>
 
     <form method="post" action="update_config.php">
-      <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+      <input type="hidden" name="csrf_token" id="csrf_token"
+             value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
 
       <!-- LIEU -->
       <div class="card" id="lieu">
@@ -343,14 +367,14 @@ textarea{min-height:70px;resize:vertical}
         <div class="form-grid">
           <?php
           $contactFields = [
-            ['localCrisisNumber',  '📞 Cellule de crise locale'],
-            ['localSamuNumber',    '🚑 SAMU / ambulance local'],
-            ['localPompiersNumber','🚒 Pompiers locaux'],
-            ['localMairieNumber',  '🏛️ Mairie / Municipalité'],
-            ['localPrefecture',    '🏛️ Préfecture / Canton'],
-            ['localDsden',         '🎓 DSDEN / Inspection académique'],
-            ['localCroixRouge',    '🔴 Croix-Rouge locale'],
-            ['localRadioFreq',     '📻 Radio locale (fréquence MHz)'],
+            ['localCrisisNumber',   '📞 Cellule de crise locale'],
+            ['localSamuNumber',     '🚑 SAMU / ambulance local'],
+            ['localPompiersNumber', '🚒 Pompiers locaux'],
+            ['localMairieNumber',   '🏛️ Mairie / Municipalité'],
+            ['localPrefecture',     '🏛️ Préfecture / Canton'],
+            ['localDsden',          '🎓 DSDEN / Inspection académique'],
+            ['localCroixRouge',     '🔴 Croix-Rouge locale'],
+            ['localRadioFreq',      '📻 Radio locale (fréquence MHz)'],
           ];
           foreach ($contactFields as [$name, $lbl]):
           ?>
@@ -479,11 +503,16 @@ textarea{min-height:70px;resize:vertical}
         <span class="svc-action" style="color:var(--sub)">màj il y a <?= $hashAge ?></span>
       </div>
       <?php if (!empty($ethIp)): ?>
-      <div class="svc-row">
+      <div class="svc-row" id="ssh">
         <span class="dot ok"></span>
-        <span class="svc-name">Ethernet</span>
+        <span class="svc-name">Ethernet
+          <span style="font-size:.75rem;color:var(--muted);font-weight:400">
+            (<?= htmlspecialchars($ethIface) ?>)
+          </span>
+        </span>
         <span class="svc-action" style="color:var(--sub)">
-          <?= htmlspecialchars($ethIp) ?> — SSH : <code>ssh pi@<?= htmlspecialchars($ethIp) ?></code>
+          <?= htmlspecialchars($ethIp) ?> — SSH :
+          <code>ssh pi@<?= htmlspecialchars($ethIp) ?></code>
         </span>
       </div>
       <?php endif; ?>
@@ -527,23 +556,30 @@ textarea{min-height:70px;resize:vertical}
 
 <script>
 async function reloadNetwork(reloadWifi) {
-    const btn = event.target;
+    const btn    = event.target;
     const result = document.getElementById('reloadResult');
-    btn.disabled = true;
+
+    btn.disabled    = true;
     btn.textContent = '⏳ Rechargement...';
     result.style.display = 'block';
-    result.style.color = 'var(--sub)';
-    result.textContent = 'Envoi de la commande...';
+    result.style.color   = 'var(--sub)';
+    result.textContent   = 'Envoi de la commande...';
+
     try {
         const body = new FormData();
         body.append('reload_wifi', reloadWifi ? 'true' : 'false');
-        // Appel via localhost (nginx restreint à 127.0.0.1 pour cet endpoint)
-        // On passe par un proxy PHP local pour contourner la restriction nginx
+
+        // FIX v2.3 : token CSRF ajouté — le proxy le vérifie côté serveur
+        // Sans ce token, api_reload_network_proxy.php retourne 403 (CSRF rejeté)
+        const csrfToken = document.getElementById('csrf_token').value;
+        body.append('csrf_token', csrfToken);
+
         const resp = await fetch('/api/reload-network-proxy', {
             method: 'POST',
             body
         });
         const data = await resp.json();
+
         if (data.success) {
             result.style.color = 'var(--green)';
             result.textContent = '✅ ' + (data.log || []).join(' · ');
@@ -555,7 +591,7 @@ async function reloadNetwork(reloadWifi) {
         result.style.color = 'var(--red)';
         result.textContent = '❌ Erreur réseau : ' + e.message;
     } finally {
-        btn.disabled = false;
+        btn.disabled    = false;
         btn.textContent = reloadWifi ? '📡 Reload WiFi' : '🔄 Reload services';
         setTimeout(() => location.reload(), 3000);
     }
