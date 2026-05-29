@@ -2,7 +2,11 @@
 Description=SOS-GUIDE Health Check — Vérification intégrité SHA256 toutes les 5 minutes
 Documentation=https://sos-guide.fr
 After=network.target hostapd.service dnsmasq.service nginx.service
-Requires=sos-guide-health.timer
+# FIX v2.3 : Requires=sos-guide-health.timer supprimé
+# Le timer active ce service — le service ne doit pas dépendre du timer
+# (dépendance circulaire : timer → service → timer)
+# PartOf= permet d'arrêter le service quand le timer est arrêté (comportement souhaité)
+PartOf=sos-guide-health.timer
 
 [Service]
 Type=oneshot

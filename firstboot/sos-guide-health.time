@@ -1,7 +1,9 @@
 [Unit]
 Description=SOS-GUIDE — Timer vérification intégrité (toutes les 5 minutes)
 Documentation=https://sos-guide.fr
-Requires=sos-guide-health.service
+# FIX v2.3 : Requires= supprimé — le timer active le service, pas l'inverse
+# ⚠️  CE FICHIER DOIT ÊTRE RENOMMÉ sos-guide-health.timer
+#     build-image.sh s'en charge lors de la copie dans /etc/systemd/system/
 
 [Timer]
 # Première exécution 2 minutes après le démarrage (laisser les services s'initialiser)
