@@ -1,8 +1,8 @@
 <?php
 /**
- * SOS-GUIDE — api_install.php v2.4
+ * SOS-GUIDE — api_install.php v2.3
  *
- * CORRECTIONS v2.4 :
+ * CORRECTIONS v2.3 :
  *   FIX BUG-19 : Race condition sur le rate-limit
  *                Lecture + incrément + écriture maintenant atomiques via flock()
  *                Un seul processus à la fois accède au fichier RATE_FILE
