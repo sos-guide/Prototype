@@ -1,6 +1,6 @@
 #!/bin/bash
 # ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  SOS-GUIDE First Boot v2.3 — Mode STARTER                                  ║
+# ║  SOS-GUIDE First Boot v2.4 — Mode STARTER                                  ║
 # ║                                                                             ║
 # ║  CORRECTIONS v2.4 :                                                        ║
 # ║  FIX BUG-01 : detect_wifi_iface() — vérification /sys/class/net/*/wireless ║
